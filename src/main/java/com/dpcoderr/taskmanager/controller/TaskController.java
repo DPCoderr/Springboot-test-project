@@ -1,8 +1,12 @@
 package com.dpcoderr.taskmanager.controller;
 
 import com.dpcoderr.taskmanager.entity.Task;
+import com.dpcoderr.taskmanager.repository.TaskRepository;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,54 +15,59 @@ import java.util.List;
 @RequestMapping("/api/v1/tasks")
 public class TaskController {
 
-    // Temporary in-memory task list for demonstration purposes
-    private List<Task> tasks = new ArrayList<>();
-    private Long nextId = 1L;
+    private final TaskRepository taskRepository;
+
+    public TaskController(TaskRepository taskRepository) {
+        this.taskRepository = taskRepository;
+    }
 
     @GetMapping
     public List<Task> getAllTasks() {
-        return tasks;
+        return taskRepository.findAll();
     }
 
     @GetMapping("/{id}")
-    public Task getTaskById(@PathVariable Long id) {
-        return tasks.stream()
-                .filter(task -> task.getId().equals(id))
-                .findFirst()
-                .orElse(null);
+    public ResponseEntity<Task> getTaskById(@PathVariable Long id) {
+        return taskRepository
+                .findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/create")
-    public Task createTask(@RequestBody Task task) {
-        task.setId(nextId++);
-        task.setCreatedAt(LocalDateTime.now());
-        task.setCompleted(false);
-        tasks.add(task);
+    public ResponseEntity<Task> createTask(@RequestBody Task task) {
+        Task savedTask = taskRepository.save(task);
 
-        return task;
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .replacePath("/api/v1/tasks/{id}")
+                .buildAndExpand(savedTask.getId())
+                .toUri();
+
+        return ResponseEntity.created(location).body(savedTask);
     }
 
     @PutMapping("/{id}")
-    public Task updateTask(@PathVariable Long id, @RequestBody Task request) {
-        Task existingTask = tasks.stream()
-                .filter(t -> t.getId().equals(id))
-                .findFirst()
-                .orElse(null);
-
-        if (existingTask == null) {
-            return null; // Or throw an exception
-        }
-
-        existingTask.setTitle(request.getTitle());
-        existingTask.setDescription(request.getDescription());
-        existingTask.setCompleted(request.getCompleted());
-        existingTask.setCreatedAt(LocalDateTime.now());
-
-        return  existingTask;
+    public ResponseEntity<Task> updateTask(@PathVariable Long id, @RequestBody Task request) {
+        return taskRepository
+                .findById(id)
+                .map(task -> {
+                    task.setTitle(request.getTitle());
+                    task.setDescription(request.getDescription());
+                    task.setCompleted(request.getCompleted());
+                    Task updatedTask = taskRepository.save(task);
+                    return ResponseEntity.ok(updatedTask);
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
-    public void deleteTask(@PathVariable Long id) {
-        tasks.removeIf(task -> task.getId().equals(id));
+    public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
+        return taskRepository.findById(id)
+                .map(task -> {
+                    taskRepository.delete(task);
+                    return ResponseEntity.noContent().<Void>build();
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 }
